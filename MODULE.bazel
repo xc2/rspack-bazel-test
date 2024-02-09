@@ -1,0 +1,94 @@
+npm_repos = []
+
+def use_npm_package_bin(name, version, integrity, entry_point, package = None, run_name = "bin", proxy = None, **kwargs):
+    npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
+
+    package = package or name
+    npm.npm_import(
+        name = name,
+        extra_build_content = "\n".join([
+            """load("@aspect_rules_js//js:defs.bzl", "js_binary")""",
+            "",
+            """js_binary(""",
+            """  name = "{}",""".format(run_name),
+            """  data = [":package"],""",
+            """  entry_point = ":package/{}",""".format(entry_point),
+            """  copy_data_to_bin = False,""",
+            """  visibility = ["//visibility:public"],""",
+            """  chdir = "$$BUILD_WORKING_DIRECTORY",""",
+            """)""",
+            "",
+        ]),
+        # npm info <pkg>@<version> dist.integrity
+        integrity = integrity,
+        package = package,
+        version = version,
+        **kwargs
+    )
+    npm_repos.append(name)
+
+def use_node_modules(name, package = None, npmrc = None, pnpm_lock = None, **kwargs):
+    npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
+
+    package = package or "//"
+    pnpm_lock = pnpm_lock or "{}:pnpm-lock.yaml".format(package)
+    npmrc = npmrc or "//:.npmrc"
+    npm.npm_translate_lock(
+        name = name,
+        npmrc = npmrc,
+        verify_node_modules_ignored = "//:.bazelignore",
+        pnpm_lock = pnpm_lock,
+        **kwargs
+    )
+
+    npm_repos.append(name)
+
+# https://bazel.build/rules/lib/globals/module
+# https://registry.bazel.build
+bazel_dep(name = "aspect_bazel_lib", version = "2.4.1")
+bazel_dep(name = "aspect_rules_js", version = "1.37.1")
+bazel_dep(name = "aspect_rules_swc", version = "1.1.0")
+bazel_dep(name = "aspect_rules_ts", version = "2.1.1")
+bazel_dep(name = "bazel_skylib", version = "1.5.0")
+bazel_dep(name = "aspect_rules_esbuild", version = "0.18.0")
+
+####### Node.js version #########
+# By default you get the node version from DEFAULT_NODE_VERSION in @rules_nodejs//nodejs:repositories.bzl
+# Optionally you can pin a different node version:
+bazel_dep(name = "rules_nodejs", version = "6.0.3")
+
+node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
+node.toolchain(node_version = "18.19.0")
+use_repo(node, "nodejs")
+
+#################################
+use_npm_package_bin(
+    name = "pnpm",
+    entry_point = "dist/pnpm.cjs",
+    integrity = "sha512-gxz0xfi4N0r3FSHU0VPbSdcIbeYVwq98tenX64umMN2sRv6kldZD5VLvLmijqpmj5en77oaWcClnUE31xZyycw==",
+    run_name = "pnpm",
+    version = "8.15.1",
+)
+
+use_node_modules(name = "npm")
+
+use_node_modules(
+    name = "lint",
+    package = "//tools/lint",
+)
+
+use_node_modules(
+    name = "jsts",
+    package = "//tools/jsts",
+)
+
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
+use_repo(npm, *npm_repos)
+
+################################################################################
+# rules_ts
+################################################################################
+
+rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext", dev_dependency = True)
+rules_ts_ext.deps()
+use_repo(rules_ts_ext, "npm_typescript")
